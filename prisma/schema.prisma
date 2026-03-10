@@ -1,0 +1,139 @@
+// Prisma schema for FitBook – Personal Trainer Management & Booking App
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  TRAINER
+  CLIENT
+}
+
+enum WorkoutType {
+  STRENGTH
+  CARDIO
+  MOBILITY
+  HIIT
+  OTHER
+}
+
+enum SessionStatus {
+  UPCOMING
+  COMPLETED
+  CANCELLED
+}
+
+// ─── NextAuth required models ─────────────────────────────────────────────────
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+// ─── App models ───────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+
+  // App-specific fields
+  role               Role    @default(CLIENT)
+  onboardingComplete Boolean @default(false)
+  emailReminders     Boolean @default(true)
+
+  // Stored so server-side Calendar API calls can be made without the user being online.
+  // Copied from the Account record on each login to keep them fresh.
+  googleAccessToken  String? @db.Text
+  googleRefreshToken String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // NextAuth relations
+  accounts Account[]
+  sessions Session[]
+
+  // App relations
+  sessionsAsTrainer BookingSession[] @relation("TrainerSessions")
+  sessionsAsClient  BookingSession[] @relation("ClientSessions")
+  availability      Availability[]
+}
+
+// Named BookingSession to avoid conflict with NextAuth's Session model
+model BookingSession {
+  id          String        @id @default(cuid())
+  trainerId   String
+  clientId    String
+  startTime   DateTime
+  endTime     DateTime
+  workoutType WorkoutType
+  notes        String?       @db.Text
+  trainerNotes String?       @db.Text
+  status       SessionStatus @default(UPCOMING)
+
+  // Google Calendar event ID — stored so we can delete the event on cancellation
+  googleEventId String?
+
+  reminderSent Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  trainer User @relation("TrainerSessions", fields: [trainerId], references: [id])
+  client  User @relation("ClientSessions", fields: [clientId], references: [id])
+}
+
+model Availability {
+  id        String @id @default(cuid())
+  trainerId String
+  dayOfWeek Int    // 0 = Sunday … 6 = Saturday
+  startTime String // "09:00" (24-hour local time)
+  endTime   String // "17:00"
+
+  trainer User @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+}
