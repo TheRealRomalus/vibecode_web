@@ -243,6 +243,7 @@ export default function WorkoutPlanManager({ clientId, plans }: Props) {
 // ─── Add exercise form ─────────────────────────────────────────────────────────
 
 function AddExerciseForm({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   planId: _planId,
   loading,
   onSave,

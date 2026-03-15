@@ -80,6 +80,7 @@ export default function BookingFlow({ trainers }: { trainers: Trainer[] }) {
       .catch(() => { if (!cancelled) setPlans([]); })
       .finally(() => { if (!cancelled) setLoadingPlans(false); });
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trainer?.id]);
 
   async function handleDateSelect(date: string) {
