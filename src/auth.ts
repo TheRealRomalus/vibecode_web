@@ -49,9 +49,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
 
   events: {
-    // linkAccount fires after the OAuth account is linked to a User record in the DB.
-    // Safe place to copy Google tokens onto the User row for server-side Calendar API calls.
     async linkAccount({ user, account }) {
+      console.log("[auth] linkAccount fired", { userId: user.id, provider: account.provider });
       if (account.provider === "google") {
         await prisma.user.update({
           where: { id: user.id },
@@ -60,19 +59,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             googleRefreshToken: account.refresh_token ?? null,
           },
         });
+        console.log("[auth] linkAccount: tokens saved to user row");
       }
     },
   },
 
   callbacks: {
-    // Attach custom fields to the session so server components and client hooks can read them
     async session({ session, user }) {
+      console.log("[auth] session callback", { userId: user.id, email: user.email });
       return {
         ...session,
         user: {
           ...session.user,
           id: user.id,
-          // Explicitly pull from DB user so name/image always reflect the latest Google info
           name: user.name,
           email: user.email,
           image: user.image,
