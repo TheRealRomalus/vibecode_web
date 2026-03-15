@@ -25,7 +25,7 @@ export async function GET() {
         id: t.id,
         name: t.name,
         image: t.image,
-        availableDows: [...new Set(t.availability.map((a) => a.dayOfWeek))],
+        availableDows: Array.from(new Set(t.availability.map((a) => a.dayOfWeek))),
       }))
   );
 }

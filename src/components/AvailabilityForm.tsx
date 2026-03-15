@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 type Slot = { dayOfWeek: number; startTime: string; endTime: string };
 type Block = { id: string; start: string; end: string };
@@ -55,6 +56,7 @@ function initDays(initial: Slot[]): Map<number, DayState> {
 }
 
 export default function AvailabilityForm({ initial }: { initial: Slot[] }) {
+  const router = useRouter();
   const [days, setDays] = useState<Map<number, DayState>>(() => initDays(initial));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -152,6 +154,7 @@ export default function AvailabilityForm({ initial }: { initial: Slot[] }) {
       }
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {

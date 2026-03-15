@@ -43,5 +43,13 @@ export async function PATCH(
     data: result.data,
   });
 
+  // When a session is marked completed, increment sessionsUsed on TrainerClient
+  if (result.data.status === "COMPLETED") {
+    await prisma.trainerClient.updateMany({
+      where: { trainerId: session.user.id, clientId: updated.clientId },
+      data: { sessionsUsed: { increment: 1 } },
+    });
+  }
+
   return NextResponse.json(updated);
 }

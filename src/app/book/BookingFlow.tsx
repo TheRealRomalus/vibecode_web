@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import DatePicker from "@/components/DatePicker";
@@ -14,15 +14,19 @@ type Trainer = {
 
 type Slot = { start: string; end: string };
 
-type WorkoutType = "STRENGTH" | "CARDIO" | "MOBILITY" | "HIIT" | "OTHER";
+type Exercise = {
+  id: string;
+  name: string;
+  targetSets: number;
+  targetReps: string;
+  targetWeight: number | null;
+};
 
-const WORKOUT_OPTIONS: { value: WorkoutType; label: string }[] = [
-  { value: "STRENGTH", label: "Strength" },
-  { value: "CARDIO", label: "Cardio" },
-  { value: "MOBILITY", label: "Mobility" },
-  { value: "HIIT", label: "HIIT" },
-  { value: "OTHER", label: "Other" },
-];
+type Plan = {
+  id: string;
+  name: string;
+  exercises: Exercise[];
+};
 
 function formatDisplayDate(dateStr: string) {
   return new Date(`${dateStr}T12:00:00`).toLocaleDateString("en-US", {
@@ -53,10 +57,30 @@ export default function BookingFlow({ trainers }: { trainers: Trainer[] }) {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
-  const [workoutType, setWorkoutType] = useState<WorkoutType>("STRENGTH");
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [loadingPlans, setLoadingPlans] = useState(false);
   const [notes, setNotes] = useState("");
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Load workout plans whenever trainer is known
+  useEffect(() => {
+    if (!trainer) return;
+    let cancelled = false;
+    setLoadingPlans(true);
+    fetch(`/api/trainers/${trainer.id}/my-plans`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        const p: Plan[] = data.plans ?? [];
+        setPlans(p);
+        setSelectedPlan(p.length === 1 ? p[0] : null);
+      })
+      .catch(() => { if (!cancelled) setPlans([]); })
+      .finally(() => { if (!cancelled) setLoadingPlans(false); });
+    return () => { cancelled = true; };
+  }, [trainer?.id]);
 
   async function handleDateSelect(date: string) {
     setSelectedDate(date);
@@ -65,7 +89,6 @@ export default function BookingFlow({ trainers }: { trainers: Trainer[] }) {
     setLoadingSlots(true);
     setStep("slot");
     setError(null);
-
     try {
       const res = await fetch(`/api/trainers/${trainer!.id}/slots?date=${date}`);
       const data = await res.json();
@@ -81,7 +104,6 @@ export default function BookingFlow({ trainers }: { trainers: Trainer[] }) {
     if (!trainer || !selectedDate || !selectedSlot) return;
     setBooking(true);
     setError(null);
-
     try {
       const res = await fetch("/api/bookings", {
         method: "POST",
@@ -91,16 +113,14 @@ export default function BookingFlow({ trainers }: { trainers: Trainer[] }) {
           date: selectedDate,
           slotStart: selectedSlot.start,
           slotEnd: selectedSlot.end,
-          workoutType,
+          workoutType: "STRENGTH",
           notes: notes.trim() || undefined,
         }),
       });
-
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error ?? "Booking failed");
       }
-
       router.push("/dashboard?booked=1");
       router.refresh();
     } catch (e) {
@@ -153,7 +173,6 @@ export default function BookingFlow({ trainers }: { trainers: Trainer[] }) {
       {/* ── Step: Date ────────────────────────────────────── */}
       {(step === "date" || step === "slot" || step === "confirm") && trainer && (
         <section>
-          {/* Trainer summary */}
           <div className="flex items-center gap-2 mb-4">
             {trainers.length > 1 && (
               <button
@@ -251,7 +270,7 @@ export default function BookingFlow({ trainers }: { trainers: Trainer[] }) {
         </section>
       )}
 
-      {/* ── Step: Confirm ────────────────────────────────── */}
+      {/* ── Step: Confirm ─────────────────────────────────── */}
       {step === "confirm" && trainer && selectedDate && selectedSlot && (
         <section className="space-y-4">
           {/* Summary card */}
@@ -261,25 +280,70 @@ export default function BookingFlow({ trainers }: { trainers: Trainer[] }) {
             <p className="text-indigo-600 text-sm">with {trainer.name}</p>
           </div>
 
-          {/* Workout type */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
-            <label className="text-sm font-semibold text-gray-700">Workout type</label>
-            <div className="grid grid-cols-3 gap-2">
-              {WORKOUT_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setWorkoutType(opt.value)}
-                  className={`py-2 rounded-xl text-sm font-medium border transition-colors ${
-                    workoutType === opt.value
-                      ? "bg-indigo-600 text-white border-indigo-600"
-                      : "bg-white text-gray-700 border-gray-200 hover:border-indigo-300"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+          {/* Workout plan */}
+          {loadingPlans ? (
+            <div className="bg-white rounded-2xl border border-gray-100 p-4 text-center">
+              <p className="text-gray-400 text-sm">Loading your workout plan…</p>
             </div>
-          </div>
+          ) : plans.length > 0 ? (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-700">Workout plan</p>
+
+              {/* Plan selector (only shown if multiple plans) */}
+              {plans.length > 1 && (
+                <div className="space-y-2">
+                  {plans.map((plan) => (
+                    <button
+                      key={plan.id}
+                      onClick={() => setSelectedPlan(plan)}
+                      className={`w-full text-left rounded-xl border p-3 transition-colors ${
+                        selectedPlan?.id === plan.id
+                          ? "border-indigo-400 bg-indigo-50"
+                          : "border-gray-200 hover:border-indigo-200"
+                      }`}
+                    >
+                      <p className="text-sm font-semibold text-gray-900">{plan.name}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {plan.exercises.length} exercise{plan.exercises.length !== 1 ? "s" : ""}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Single plan name */}
+              {plans.length === 1 && (
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2">
+                  <p className="text-sm font-semibold text-indigo-900">{plans[0].name}</p>
+                </div>
+              )}
+
+              {/* Exercise list */}
+              {selectedPlan && selectedPlan.exercises.length > 0 && (
+                <div className="border-t pt-3 space-y-1">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                    Today&apos;s exercises
+                  </p>
+                  {selectedPlan.exercises.map((ex, i) => (
+                    <div key={ex.id} className="flex items-center justify-between gap-2 py-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-xs text-gray-300 font-mono w-4 flex-shrink-0">{i + 1}</span>
+                        <span className="text-sm text-gray-800 truncate">{ex.name}</span>
+                      </div>
+                      <span className="text-xs text-gray-400 flex-shrink-0">
+                        {ex.targetSets}×{ex.targetReps}
+                        {ex.targetWeight ? ` @ ${ex.targetWeight}kg` : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {selectedPlan && selectedPlan.exercises.length === 0 && (
+                <p className="text-xs text-gray-400 italic">No exercises added to this plan yet.</p>
+              )}
+            </div>
+          ) : null}
 
           {/* Notes */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-2">

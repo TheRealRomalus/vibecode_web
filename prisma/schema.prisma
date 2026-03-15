@@ -1,5 +1,4 @@
 // Prisma schema for FitBook – Personal Trainer Management & Booking App
-// Docs: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
@@ -30,6 +29,11 @@ enum SessionStatus {
   UPCOMING
   COMPLETED
   CANCELLED
+}
+
+enum PackageType {
+  SESSION_COUNT // fixed number of sessions
+  WEEKLY        // ongoing, sessions per week
 }
 
 // ─── NextAuth required models ─────────────────────────────────────────────────
@@ -82,13 +86,10 @@ model User {
   emailVerified DateTime?
   image         String?
 
-  // App-specific fields
   role               Role    @default(CLIENT)
   onboardingComplete Boolean @default(false)
   emailReminders     Boolean @default(true)
 
-  // Stored so server-side Calendar API calls can be made without the user being online.
-  // Copied from the Account record on each login to keep them fresh.
   googleAccessToken  String? @db.Text
   googleRefreshToken String? @db.Text
 
@@ -99,41 +100,113 @@ model User {
   accounts Account[]
   sessions Session[]
 
-  // App relations
+  // Booking relations
   sessionsAsTrainer BookingSession[] @relation("TrainerSessions")
   sessionsAsClient  BookingSession[] @relation("ClientSessions")
   availability      Availability[]
+
+  // Trainer–client management
+  trainerClients TrainerClient[] @relation("TrainerClients")
+  clientTrainers TrainerClient[] @relation("ClientTrainers")
 }
 
-// Named BookingSession to avoid conflict with NextAuth's Session model
+// Named BookingSession to avoid conflict with NextAuth Session model
 model BookingSession {
-  id          String        @id @default(cuid())
-  trainerId   String
-  clientId    String
-  startTime   DateTime
-  endTime     DateTime
-  workoutType WorkoutType
+  id           String        @id @default(cuid())
+  trainerId    String
+  clientId     String
+  startTime    DateTime
+  endTime      DateTime
+  workoutType  WorkoutType
   notes        String?       @db.Text
   trainerNotes String?       @db.Text
   status       SessionStatus @default(UPCOMING)
-
-  // Google Calendar event ID — stored so we can delete the event on cancellation
   googleEventId String?
+  reminderSent  Boolean      @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
-  reminderSent Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  trainer User @relation("TrainerSessions", fields: [trainerId], references: [id])
-  client  User @relation("ClientSessions", fields: [clientId], references: [id])
+  trainer      User          @relation("TrainerSessions", fields: [trainerId], references: [id])
+  client       User          @relation("ClientSessions", fields: [clientId], references: [id])
+  exerciseLogs ExerciseLog[]
 }
 
 model Availability {
   id        String @id @default(cuid())
   trainerId String
-  dayOfWeek Int    // 0 = Sunday … 6 = Saturday
-  startTime String // "09:00" (24-hour local time)
-  endTime   String // "17:00"
+  dayOfWeek Int
+  startTime String
+  endTime   String
 
   trainer User @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+}
+
+// ─── Client Management ────────────────────────────────────────────────────────
+
+/// One record per trainer–client pair. Holds package & grace period config.
+model TrainerClient {
+  id               String      @id @default(cuid())
+  trainerId        String
+  clientId         String
+  packageType      PackageType @default(SESSION_COUNT)
+  totalSessions    Int?        // SESSION_COUNT: total sessions purchased
+  sessionsPerWeek  Int?        // WEEKLY: target sessions per week
+  sessionsUsed     Int         @default(0)
+  gracePeriodWeeks Int         @default(3)
+  packageStartDate DateTime    @default(now())
+  internalNotes    String?     @db.Text // trainer-only notes about this client
+  active           Boolean     @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  trainer      User          @relation("TrainerClients", fields: [trainerId], references: [id])
+  client       User          @relation("ClientTrainers", fields: [clientId], references: [id])
+  workoutPlans WorkoutPlan[]
+
+  @@unique([trainerId, clientId])
+}
+
+/// A named workout plan assigned to a client by their trainer.
+model WorkoutPlan {
+  id              String        @id @default(cuid())
+  trainerClientId String
+  name            String
+  description     String?       @db.Text
+  active          Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  trainerClient TrainerClient  @relation(fields: [trainerClientId], references: [id], onDelete: Cascade)
+  exercises     PlanExercise[]
+}
+
+/// An exercise within a workout plan, with trainer-set targets.
+model PlanExercise {
+  id           String  @id @default(cuid())
+  planId       String
+  name         String
+  targetSets   Int     @default(3)
+  targetReps   String  @default("10") // e.g. "8-12" or "10"
+  targetWeight Float?  // kg, optional
+  order        Int     @default(0)
+
+  plan WorkoutPlan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  logs ExerciseLog[]
+}
+
+/// Actual performance log for one exercise in one session.
+model ExerciseLog {
+  id            String   @id @default(cuid())
+  sessionId     String
+  exerciseId    String
+  setsLogged    Int
+  repsLogged    String   // per-set reps, comma-separated e.g. "10,10,8"
+  weightUsed    Float?   // kg (kept for backward compat / single weight)
+  weightsLogged String?  // per-set weights, comma-separated e.g. "70,70,75"
+  notes         String?  @db.Text
+  createdAt     DateTime @default(now())
+
+  session  BookingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  exercise PlanExercise   @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
 }

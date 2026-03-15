@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import SignOutButton from "@/components/SignOutButton";
 import Calendar, { type DayData } from "@/components/Calendar";
+import ClientNav from "@/components/ClientNav";
 
 function toLocalDateStr(d: Date): string {
   return [
@@ -55,6 +56,14 @@ function formatTime(d: Date) {
   return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
+type ExerciseLogItem = {
+  id: string;
+  setsLogged: number;
+  repsLogged: string;
+  weightUsed: number | null;
+  exercise: { name: string };
+};
+
 type BookingWithTrainer = {
   id: string;
   startTime: Date;
@@ -64,6 +73,7 @@ type BookingWithTrainer = {
   trainerNotes: string | null;
   status: string;
   trainer: { name: string | null; image: string | null };
+  exerciseLogs?: ExerciseLogItem[];
 };
 
 function SessionCard({ s, past = false }: { s: BookingWithTrainer; past?: boolean }) {
@@ -101,6 +111,21 @@ function SessionCard({ s, past = false }: { s: BookingWithTrainer; past?: boolea
 
       {s.notes && (
         <p className="text-sm text-gray-500 italic border-t pt-2">{s.notes}</p>
+      )}
+
+      {s.exerciseLogs && s.exerciseLogs.length > 0 && (
+        <div className="border-t pt-2 space-y-1">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Exercises</p>
+          {s.exerciseLogs.map((log) => (
+            <div key={log.id} className="flex items-center justify-between gap-2">
+              <span className="text-xs text-gray-700 truncate">{log.exercise.name}</span>
+              <span className="text-xs text-gray-400 flex-shrink-0">
+                {log.setsLogged}×{log.repsLogged}
+                {log.weightUsed ? ` @ ${log.weightUsed}kg` : ""}
+              </span>
+            </div>
+          ))}
+        </div>
       )}
 
       {s.trainerNotes && (
@@ -145,7 +170,13 @@ export default async function DashboardPage() {
     }),
     prisma.bookingSession.findMany({
       where: { clientId: session.user.id, status: { in: ["COMPLETED", "CANCELLED"] } },
-      include: { trainer: { select: { name: true, image: true } } },
+      include: {
+        trainer: { select: { name: true, image: true } },
+        exerciseLogs: {
+          include: { exercise: { select: { name: true } } },
+          orderBy: { exercise: { order: "asc" } },
+        },
+      },
       orderBy: { startTime: "desc" },
       take: 5,
     }),
@@ -221,29 +252,7 @@ export default async function DashboardPage() {
         </section>
       </main>
 
-      {/* Bottom nav */}
-      <nav className="fixed bottom-0 inset-x-0 bg-white border-t">
-        <div className="max-w-lg mx-auto flex">
-          <Link href="/dashboard" className="flex-1 flex flex-col items-center py-3 text-indigo-600">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7A1 1 0 003 11h1v6a1 1 0 001 1h4v-4h2v4h4a1 1 0 001-1v-6h1a1 1 0 00.707-1.707l-7-7z" />
-            </svg>
-            <span className="text-xs mt-0.5 font-medium">Home</span>
-          </Link>
-          <Link href="/book" className="flex-1 flex flex-col items-center py-3 text-gray-400 hover:text-gray-700">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            <span className="text-xs mt-0.5">Book</span>
-          </Link>
-          <Link href="/profile" className="flex-1 flex flex-col items-center py-3 text-gray-400 hover:text-gray-700">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-            <span className="text-xs mt-0.5">Profile</span>
-          </Link>
-        </div>
-      </nav>
+      <ClientNav />
     </div>
   );
 }

@@ -72,6 +72,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         user: {
           ...session.user,
           id: user.id,
+          // Explicitly pull from DB user so name/image always reflect the latest Google info
+          name: user.name,
+          email: user.email,
+          image: user.image,
           role: (user as { role: Role }).role,
           onboardingComplete: (user as { onboardingComplete: boolean })
             .onboardingComplete,
