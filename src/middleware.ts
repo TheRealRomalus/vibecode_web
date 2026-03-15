@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 // Routes that don't require any authentication
-const PUBLIC_ROUTES = ["/", "/api/auth", "/api/unsubscribe"];
+const PUBLIC_ROUTES = ["/", "/api/auth", "/api/unsubscribe", "/api/debug"];
 
 /**
  * Lightweight middleware that only checks cookie presence.
